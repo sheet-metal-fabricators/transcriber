@@ -233,9 +233,7 @@ export default function Home() {
     setStatusMsg('Preparing audio...')
 
     try {
-      // Split into chunks if needed
-      const needsChunking = file.size > CHUNK_SIZE_BYTES
-      setStatusMsg(needsChunking ? `Splitting file into chunks...` : 'Uploading to Groq Whisper...')
+      setStatusMsg('Preparing audio...')
 
       const chunks = await splitAudioIntoChunks(file, setStatusMsg)
       const totalChunks = chunks.length
