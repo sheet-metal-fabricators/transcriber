@@ -39,7 +39,7 @@ const LANGUAGES = [
 ]
 
 const TARGET_SAMPLE_RATE = 8000
-const MAX_CHUNK_SECONDS = 300
+const MAX_CHUNK_SECONDS = 120 // 2 min chunks = ~2MB WAV at 8kHz, well under Groq 25MB limit
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 async function splitAudioIntoChunks(file: File, onProgress?: (msg: string) => void): Promise<Blob[]> {
@@ -105,15 +105,19 @@ async function transcribeBlob(blob: Blob, groqKey: string, language: string, lab
     body: fd,
   })
   if (!res.ok) {
-    const err = await res.json()
-    const msg = err.error?.message || ''
+    let errMsg = `HTTP ${res.status}`
+    try {
+      const err = await res.json()
+      errMsg = err.error?.message || errMsg
+    } catch { /* ignore parse error */ }
     if (res.status === 429 && retries > 0) {
-      const waitMatch = msg.match(/try again in ([\d.]+)s/)
+      const waitMatch = errMsg.match(/try again in ([\d.]+)s/)
       const waitMs = waitMatch ? Math.ceil(parseFloat(waitMatch[1]) * 1000) + 500 : 4000
       await sleep(waitMs)
       return transcribeBlob(blob, groqKey, language, label, retries - 1)
     }
-    throw new Error(`${label} failed: ${msg || res.status}`)
+    if (res.status === 413) throw new Error(`${label}: File too large for Groq. Try a shorter clip.`)
+    throw new Error(`${label} failed: ${errMsg}`)
   }
   return res.json()
 }
