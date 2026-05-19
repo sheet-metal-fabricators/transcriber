@@ -792,3 +792,163 @@
   background: #d93b31 !important;
   box-shadow: 0 4px 20px rgba(255,69,58,0.4) !important;
 }
+
+/* Large file warning */
+.largeFileWarn {
+  margin-top: 14px;
+  background: rgba(245,158,11,0.08);
+  border: 1px solid rgba(245,158,11,0.3);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.largeFileHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #f59e0b;
+  margin-bottom: 8px;
+}
+
+.largeFileDesc {
+  font-size: 0.78rem;
+  color: var(--muted2);
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.largeFileDesc code {
+  background: var(--surface2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.cmdBox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.cmdText {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: #30d158;
+  flex: 1;
+  word-break: break-all;
+  line-height: 1.5;
+}
+
+.cmdCopy {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted2);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.cmdCopy:hover { border-color: var(--accent); color: var(--accent); }
+
+.largeFileAlt {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(108,99,255,0.08);
+  border: 1px solid rgba(108,99,255,0.2);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: var(--muted2);
+  line-height: 1.5;
+}
+.largeFileAlt strong { color: var(--accent); }
+
+/* ffmpeg steps */
+.ffmpegSteps {
+  margin-top: 14px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.ffmpegStepsTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted2);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.ffmpegStep {
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+}
+.ffmpegStep:last-child { border-bottom: none; }
+
+.ffmpegStep strong {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.ffmpegStep p {
+  font-size: 0.76rem;
+  color: var(--muted2);
+  line-height: 1.6;
+  margin: 4px 0;
+}
+
+.ffmpegStep b { color: var(--text); }
+
+.ffmpegNum {
+  background: var(--accent);
+  color: white;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.miniCmd {
+  background: #0d0d0d;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin: 6px 0;
+  display: inline-block;
+  width: 100%;
+}
+
+.miniCmd code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.73rem;
+  color: #30d158;
+  word-break: break-all;
+  line-height: 1.5;
+}

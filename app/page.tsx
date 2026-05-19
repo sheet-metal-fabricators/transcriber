@@ -142,6 +142,9 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'transcript' | 'labeled' | 'summary' | 'export'>('summary')
   const [isDragging, setIsDragging] = useState(false)
   const [cachedFile, setCachedFile] = useState<File | null>(null)
+  const [tooLarge, setTooLarge] = useState(false)
+  const [ffmpegCmd, setFfmpegCmd] = useState('')
+  const [cmdCopied, setCmdCopied] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [stealth, setStealth] = useState(false)
 
@@ -195,6 +198,15 @@ export default function Home() {
     if (mediaUrl) URL.revokeObjectURL(mediaUrl)
     setMediaUrl(URL.createObjectURL(f))
     setIsVideo(f.type.startsWith('video/'))
+    setTooLarge(false)
+    // Files over 500MB cannot be processed in browser memory
+    const MAX_BROWSER_SIZE = 500 * 1024 * 1024
+    if (f.size > MAX_BROWSER_SIZE) {
+      setTooLarge(true)
+      const cmd = `ffmpeg -i "${f.name}" -vn -ar 16000 -ac 1 -b:a 32k "converted.mp3"`
+      setFfmpegCmd(cmd)
+      return
+    }
     // Read file into memory immediately to prevent "permission" errors later
     const reader = new FileReader()
     reader.onload = (e) => {
@@ -595,7 +607,87 @@ export default function Home() {
             )}
           </div>
 
-          {mediaUrl && (
+          {tooLarge && (
+            <div className={styles.largeFileWarn}>
+              <div className={styles.largeFileHeader}>
+                <span>⚠️</span>
+                <strong>File too large for browser ({formatSize(file?.size || 0)})</strong>
+              </div>
+              <p className={styles.largeFileDesc}>
+                Files over 500MB can't be processed in the browser. Convert it to a small MP3 first using this command — paste it in your terminal (Command Prompt or PowerShell):
+              </p>
+              <div className={styles.cmdBox}>
+                <code className={styles.cmdText}>{ffmpegCmd}</code>
+                <button
+                  className={styles.cmdCopy}
+                  onClick={() => {
+                    navigator.clipboard.writeText(ffmpegCmd)
+                    setCmdCopied(true)
+                    setTimeout(() => setCmdCopied(false), 2000)
+                  }}
+                >
+                  {cmdCopied ? '✓ Copied!' : 'Copy'}
+                </button>
+              </div>
+              <div className={styles.ffmpegSteps}>
+                <div className={styles.ffmpegStepsTitle}>📋 Step-by-step instructions</div>
+
+                <div className={styles.ffmpegStep}>
+                  <span className={styles.ffmpegNum}>1</span>
+                  <div>
+                    <strong>Check if ffmpeg is installed</strong>
+                    <p>Open Command Prompt — press <b>Win + R</b>, type <b>cmd</b>, press Enter. Then type:</p>
+                    <div className={styles.miniCmd}><code>ffmpeg -version</code></div>
+                    <p>If you see version info, skip to step 3. If you see "not recognized", continue to step 2.</p>
+                  </div>
+                </div>
+
+                <div className={styles.ffmpegStep}>
+                  <span className={styles.ffmpegNum}>2</span>
+                  <div>
+                    <strong>Install ffmpeg (one time only)</strong>
+                    <p>In Command Prompt, paste this and press Enter:</p>
+                    <div className={styles.miniCmd}><code>winget install ffmpeg</code></div>
+                    <p>Wait for it to finish, then close and reopen Command Prompt.</p>
+                  </div>
+                </div>
+
+                <div className={styles.ffmpegStep}>
+                  <span className={styles.ffmpegNum}>3</span>
+                  <div>
+                    <strong>Go to the folder where your file is saved</strong>
+                    <p>In Command Prompt type cd followed by your folder path. Example for Downloads:</p>
+                    <div className={styles.miniCmd}><code>cd %USERPROFILE%\Downloads</code></div>
+                    <p>Tip: Open File Explorer, hold Shift and right-click the folder, then click "Open in Terminal".</p>
+                  </div>
+                </div>
+
+                <div className={styles.ffmpegStep}>
+                  <span className={styles.ffmpegNum}>4</span>
+                  <div>
+                    <strong>Run the conversion command</strong>
+                    <p>Click Copy above and paste the command into Command Prompt, then press Enter:</p>
+                    <div className={styles.miniCmd}><code style={{color:'#30d158'}}>{ffmpegCmd}</code></div>
+                    <p>You will see progress lines. Wait until it returns to the prompt (shows your folder path again).</p>
+                  </div>
+                </div>
+
+                <div className={styles.ffmpegStep}>
+                  <span className={styles.ffmpegNum}>5</span>
+                  <div>
+                    <strong>Upload the converted file here</strong>
+                    <p>A file called <code>converted.mp3</code> will appear in the same folder. Upload it to this tool — it will be under 50MB and transcribe perfectly.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className={styles.largeFileAlt}>
+                <span>💡 Prefer not to use the terminal? Switch to <strong>Live Capture</strong> mode — play the file in VLC and it captures the audio live. No conversion needed.</span>
+              </div>
+            </div>
+          )}
+
+          {mediaUrl && !tooLarge && (
             <div className={styles.playerWrap}>
               {isVideo
                 ? <video ref={mediaRef as React.RefObject<HTMLVideoElement>} src={mediaUrl} controls className={styles.videoPlayer} onTimeUpdate={e => setCurrentTime((e.target as HTMLVideoElement).currentTime)} />
