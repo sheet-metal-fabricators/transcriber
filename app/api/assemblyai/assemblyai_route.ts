@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
       segments,
       language: result.language_code,
       duration: (result.audio_duration as number) || 0,
-      speakers: [...new Set(utterances.map(u => `Speaker ${u.speaker}`))],
+      speakers: utterances.map(u => `Speaker ${u.speaker}`).filter((s, i, arr) => arr.indexOf(s) === i),
     })
 
   } catch (err: unknown) {
