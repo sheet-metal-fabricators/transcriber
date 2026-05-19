@@ -27,11 +27,40 @@ interface Analysis {
   duration_note: string
 }
 
+const LANGUAGES = [
+  { code: 'auto', label: '🌐 Auto Detect' },
+  { code: 'en', label: '🇬🇧 English' },
+  { code: 'hi', label: '🇮🇳 Hindi' },
+  { code: 'ta', label: '🇮🇳 Tamil' },
+  { code: 'te', label: '🇮🇳 Telugu' },
+  { code: 'ml', label: '🇮🇳 Malayalam' },
+  { code: 'kn', label: '🇮🇳 Kannada' },
+  { code: 'mr', label: '🇮🇳 Marathi' },
+  { code: 'bn', label: '🇧🇩 Bengali' },
+  { code: 'ar', label: '🇸🇦 Arabic' },
+  { code: 'fr', label: '🇫🇷 French' },
+  { code: 'de', label: '🇩🇪 German' },
+  { code: 'es', label: '🇪🇸 Spanish' },
+  { code: 'pt', label: '🇵🇹 Portuguese' },
+  { code: 'zh', label: '🇨🇳 Chinese' },
+  { code: 'ja', label: '🇯🇵 Japanese' },
+  { code: 'ko', label: '🇰🇷 Korean' },
+  { code: 'ru', label: '🇷🇺 Russian' },
+  { code: 'tr', label: '🇹🇷 Turkish' },
+  { code: 'it', label: '🇮🇹 Italian' },
+  { code: 'nl', label: '🇳🇱 Dutch' },
+  { code: 'pl', label: '🇵🇱 Polish' },
+  { code: 'ur', label: '🇵🇰 Urdu' },
+  { code: 'fa', label: '🇮🇷 Persian' },
+  { code: 'uk', label: '🇺🇦 Ukrainian' },
+]
+
 export default function Home() {
   const [groqKey, setGroqKey] = useState('')
   const [anthropicKey, setAnthropicKey] = useState('')
   const [showKeys, setShowKeys] = useState(false)
   const [file, setFile] = useState<File | null>(null)
+  const [language, setLanguage] = useState('auto')
   const [stage, setStage] = useState<Stage>('idle')
   const [progress, setProgress] = useState(0)
   const [statusMsg, setStatusMsg] = useState('')
@@ -55,6 +84,7 @@ export default function Home() {
     setIsDragging(false)
     const f = e.dataTransfer.files[0]
     if (f) handleFile(f)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const formatDuration = (seconds: number) => {
@@ -73,12 +103,12 @@ export default function Home() {
     setError('')
     setStage('transcribing')
     setProgress(10)
-    setStatusMsg('Sending audio to Whisper…')
+    setStatusMsg('Sending audio to Whisper...')
 
     try {
-      // Step 1: Transcribe
       const fd = new FormData()
       fd.append('file', file)
+      if (language !== 'auto') fd.append('language', language)
 
       const tRes = await fetch('/api/transcribe', {
         method: 'POST',
@@ -91,16 +121,12 @@ export default function Home() {
 
       setTranscript(tData)
       setProgress(55)
-      setStatusMsg('Transcript ready. Analyzing speakers…')
+      setStatusMsg('Transcript ready. Analyzing speakers...')
       setStage('analyzing')
 
-      // Step 2: Analyze
       const aRes = await fetch('/api/analyze', {
         method: 'POST',
-        headers: {
-          'x-anthropic-key': anthropicKey,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
         body: JSON.stringify({ transcript: tData.text, segments: tData.segments }),
       })
 
@@ -118,9 +144,7 @@ export default function Home() {
     }
   }
 
-  const copyText = (text: string) => {
-    navigator.clipboard.writeText(text)
-  }
+  const copyText = (text: string) => navigator.clipboard.writeText(text)
 
   const downloadTxt = (text: string, name: string) => {
     const blob = new Blob([text], { type: 'text/plain' })
@@ -137,16 +161,14 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      {/* Header */}
       <div className={styles.header}>
         <div className={styles.logo}>🎙</div>
         <div>
           <h1 className={styles.title}>Audio Transcriber</h1>
-          <p className={styles.subtitle}>Transcribe · Label Speakers · Summarize</p>
+          <p className={styles.subtitle}>Transcribe · Label Speakers · Summarize · 99 Languages</p>
         </div>
       </div>
 
-      {/* API Keys */}
       <div className={styles.card}>
         <div className={styles.cardHeader}>
           <span className={styles.cardLabel}>API Keys</span>
@@ -158,41 +180,20 @@ export default function Home() {
           <div className={styles.keyGrid}>
             <div className={styles.keyField}>
               <label>Groq API Key <span className={styles.tag}>Free</span></label>
-              <input
-                type="password"
-                placeholder="gsk_..."
-                value={groqKey}
-                onChange={e => setGroqKey(e.target.value)}
-                className={styles.input}
-              />
-              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className={styles.link}>
-                Get free key →
-              </a>
+              <input type="password" placeholder="gsk_..." value={groqKey} onChange={e => setGroqKey(e.target.value)} className={styles.input} />
+              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className={styles.link}>Get free key →</a>
             </div>
             <div className={styles.keyField}>
               <label>Anthropic API Key</label>
-              <input
-                type="password"
-                placeholder="sk-ant-..."
-                value={anthropicKey}
-                onChange={e => setAnthropicKey(e.target.value)}
-                className={styles.input}
-              />
-              <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className={styles.link}>
-                Get key →
-              </a>
+              <input type="password" placeholder="sk-ant-..." value={anthropicKey} onChange={e => setAnthropicKey(e.target.value)} className={styles.input} />
+              <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className={styles.link}>Get key →</a>
             </div>
           </div>
         )}
-        {(!groqKey || !anthropicKey) && (
-          <p className={styles.keyHint}>⚠ Enter both API keys above to enable transcription</p>
-        )}
-        {groqKey && anthropicKey && (
-          <p className={styles.keyReady}>✓ API keys configured</p>
-        )}
+        {(!groqKey || !anthropicKey) && <p className={styles.keyHint}>Enter both API keys above to enable transcription</p>}
+        {groqKey && anthropicKey && <p className={styles.keyReady}>✓ API keys configured</p>}
       </div>
 
-      {/* Upload */}
       <div className={styles.card}>
         <div className={styles.cardLabel}>Upload Audio</div>
         <div
@@ -202,13 +203,7 @@ export default function Home() {
           onDrop={onDrop}
           onClick={() => fileInputRef.current?.click()}
         >
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="audio/*,video/*"
-            style={{ display: 'none' }}
-            onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])}
-          />
+          <input ref={fileInputRef} type="file" accept="audio/*,video/*" style={{ display: 'none' }} onChange={e => e.target.files?.[0] && handleFile(e.target.files[0])} />
           {file ? (
             <div className={styles.fileInfo}>
               <span className={styles.fileIcon}>🎵</span>
@@ -226,21 +221,24 @@ export default function Home() {
             </>
           )}
         </div>
+
+        <div className={styles.langRow}>
+          <label className={styles.langLabel}>🌐 Language</label>
+          <select className={styles.langSelect} value={language} onChange={e => setLanguage(e.target.value)}>
+            {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
+          </select>
+          <span className={styles.langHint}>
+            {language === 'auto' ? 'Whisper will detect automatically' : 'Manually set — improves accuracy'}
+          </span>
+        </div>
       </div>
 
-      {/* Run button */}
-      <button
-        className={styles.runBtn}
-        disabled={!isReady}
-        onClick={run}
-      >
+      <button className={styles.runBtn} disabled={!isReady} onClick={run}>
         {stage === 'transcribing' || stage === 'analyzing'
-          ? <><span className={styles.spinner} /> {statusMsg}</>
-          : '⚡ Transcribe & Analyze'
-        }
+          ? <><span className={styles.spinner} />{statusMsg}</>
+          : '⚡ Transcribe & Analyze'}
       </button>
 
-      {/* Progress */}
       {(stage === 'transcribing' || stage === 'analyzing') && (
         <div className={styles.progressWrap}>
           <div className={styles.progressBar} style={{ width: `${progress}%` }} />
@@ -255,82 +253,40 @@ export default function Home() {
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className={styles.errorBox}>
-          <span>⚠</span> {error}
-        </div>
-      )}
+      {error && <div className={styles.errorBox}><span>⚠</span> {error}</div>}
 
-      {/* Results */}
       {stage === 'done' && analysis && transcript && (
         <div className={styles.results}>
-          {/* Stats row */}
           <div className={styles.statsRow}>
-            <div className={styles.stat}>
-              <span className={styles.statVal}>{transcript.language?.toUpperCase() || '—'}</span>
-              <span className={styles.statKey}>Language</span>
-            </div>
-            <div className={styles.stat}>
-              <span className={styles.statVal}>{formatDuration(transcript.duration)}</span>
-              <span className={styles.statKey}>Duration</span>
-            </div>
-            <div className={styles.stat}>
-              <span className={styles.statVal}>{analysis.speakers.length}</span>
-              <span className={styles.statKey}>Speakers</span>
-            </div>
-            <div className={styles.stat}>
-              <span className={styles.statVal} style={{ color: sentimentColor(analysis.sentiment) }}>
-                {analysis.sentiment}
-              </span>
-              <span className={styles.statKey}>Sentiment</span>
-            </div>
-            <div className={styles.stat}>
-              <span className={styles.statVal}>{transcript.text.split(/\s+/).length}</span>
-              <span className={styles.statKey}>Words</span>
-            </div>
+            <div className={styles.stat}><span className={styles.statVal}>{transcript.language?.toUpperCase() || '—'}</span><span className={styles.statKey}>Language</span></div>
+            <div className={styles.stat}><span className={styles.statVal}>{formatDuration(transcript.duration)}</span><span className={styles.statKey}>Duration</span></div>
+            <div className={styles.stat}><span className={styles.statVal}>{analysis.speakers.length}</span><span className={styles.statKey}>Speakers</span></div>
+            <div className={styles.stat}><span className={styles.statVal} style={{ color: sentimentColor(analysis.sentiment) }}>{analysis.sentiment}</span><span className={styles.statKey}>Sentiment</span></div>
+            <div className={styles.stat}><span className={styles.statVal}>{transcript.text.split(/\s+/).length}</span><span className={styles.statKey}>Words</span></div>
           </div>
 
-          {/* Tabs */}
           <div className={styles.tabs}>
             {(['summary', 'labeled', 'transcript'] as const).map(tab => (
-              <button
-                key={tab}
-                className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`}
-                onClick={() => setActiveTab(tab)}
-              >
+              <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
                 {tab === 'summary' ? '📋 Summary' : tab === 'labeled' ? '👥 Speaker View' : '📝 Raw Transcript'}
               </button>
             ))}
           </div>
 
-          {/* Tab content */}
           <div className={styles.tabContent}>
             {activeTab === 'summary' && (
               <div className={styles.summaryView}>
-                <div className={styles.summarySection}>
-                  <h3>Summary</h3>
-                  <p>{analysis.summary}</p>
-                </div>
+                <div className={styles.summarySection}><h3>Summary</h3><p>{analysis.summary}</p></div>
                 <div className={styles.summarySection}>
                   <h3>Key Points</h3>
-                  <ul className={styles.keyPoints}>
-                    {analysis.key_points.map((pt, i) => (
-                      <li key={i}>{pt}</li>
-                    ))}
-                  </ul>
+                  <ul className={styles.keyPoints}>{analysis.key_points.map((pt, i) => <li key={i}>{pt}</li>)}</ul>
                 </div>
                 <div className={styles.summarySection}>
                   <h3>Speakers Identified</h3>
-                  <div className={styles.speakerTags}>
-                    {analysis.speakers.map((s, i) => (
-                      <span key={i} className={styles.speakerTag}>{s}</span>
-                    ))}
-                  </div>
+                  <div className={styles.speakerTags}>{analysis.speakers.map((s, i) => <span key={i} className={styles.speakerTag}>{s}</span>)}</div>
                 </div>
               </div>
             )}
-
             {activeTab === 'labeled' && (
               <div className={styles.transcriptView}>
                 <div className={styles.transcriptActions}>
@@ -340,7 +296,6 @@ export default function Home() {
                 <pre className={styles.transcriptText}>{analysis.labeled_transcript}</pre>
               </div>
             )}
-
             {activeTab === 'transcript' && (
               <div className={styles.transcriptView}>
                 <div className={styles.transcriptActions}>

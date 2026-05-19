@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
       file: file,
       model: 'whisper-large-v3',
       response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
+      timestamp_granularities: ["segment"],
+      ...(formData.get("language") ? { language: formData.get("language") as string } : {}),
     }) as unknown as VerboseTranscription
 
     return NextResponse.json({

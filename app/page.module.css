@@ -410,3 +410,41 @@
   .stat { min-width: 33%; }
   .tabs { font-size: 0.7rem; }
 }
+
+/* Language selector */
+.langRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.langLabel {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted2);
+  white-space: nowrap;
+}
+
+.langSelect {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.langSelect:focus { border-color: var(--accent); }
+
+.langHint {
+  font-size: 0.7rem;
+  color: var(--muted);
+  font-style: italic;
+}
