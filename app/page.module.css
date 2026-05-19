@@ -489,3 +489,89 @@
   flex-wrap: wrap;
   margin-top: 4px;
 }
+
+/* Media player */
+.playerWrap {
+  margin-top: 14px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+}
+
+.videoPlayer {
+  width: 100%;
+  max-height: 340px;
+  display: block;
+  border-radius: 10px;
+}
+
+.audioPlayer {
+  width: 100%;
+  display: block;
+  filter: invert(1) hue-rotate(180deg);
+  border-radius: 10px;
+}
+
+/* Chunk badge */
+.chunkBadge {
+  color: var(--warning);
+  font-size: 0.7rem;
+}
+
+/* Change button */
+.changeBtn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted2);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.changeBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Clickable transcript segments */
+.segmentList {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.segment {
+  display: flex;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+}
+.segment:last-child { border-bottom: none; }
+.segment:hover { background: rgba(108,99,255,0.08); }
+
+.segmentActive {
+  background: rgba(108,99,255,0.15) !important;
+  border-left: 3px solid var(--accent);
+}
+
+.segTime {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  color: var(--accent);
+  white-space: nowrap;
+  padding-top: 2px;
+  flex-shrink: 0;
+  min-width: 38px;
+}
+
+.segText {
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text);
+}
