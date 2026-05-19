@@ -4,6 +4,13 @@ import Groq from 'groq-sdk'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+interface VerboseTranscription {
+  text: string
+  segments?: { start: number; end: number; text: string }[]
+  language?: string
+  duration?: number
+}
+
 export async function POST(req: NextRequest) {
   try {
     const groqKey = req.headers.get('x-groq-key')
@@ -25,13 +32,13 @@ export async function POST(req: NextRequest) {
       model: 'whisper-large-v3',
       response_format: 'verbose_json',
       timestamp_granularities: ['segment'],
-    })
+    }) as unknown as VerboseTranscription
 
     return NextResponse.json({
       text: transcription.text,
-      segments: transcription.segments,
-      language: transcription.language,
-      duration: transcription.duration,
+      segments: transcription.segments ?? [],
+      language: transcription.language ?? 'en',
+      duration: transcription.duration ?? 0,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Transcription failed'
