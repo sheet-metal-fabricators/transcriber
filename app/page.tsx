@@ -141,6 +141,7 @@ export default function Home() {
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState<'transcript' | 'labeled' | 'summary' | 'export'>('summary')
   const [isDragging, setIsDragging] = useState(false)
+  const [cachedFile, setCachedFile] = useState<File | null>(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [stealth, setStealth] = useState(false)
 
@@ -194,6 +195,16 @@ export default function Home() {
     if (mediaUrl) URL.revokeObjectURL(mediaUrl)
     setMediaUrl(URL.createObjectURL(f))
     setIsVideo(f.type.startsWith('video/'))
+    // Read file into memory immediately to prevent "permission" errors later
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      if (e.target?.result) {
+        const blob = new Blob([e.target.result as ArrayBuffer], { type: f.type })
+        const cachedFile = new File([blob], f.name, { type: f.type })
+        setCachedFile(cachedFile)
+      }
+    }
+    reader.readAsArrayBuffer(f)
   }
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -339,12 +350,13 @@ export default function Home() {
   // ── File transcription ────────────────────────────────────
   const runFileTranscription = async () => {
     if (!file || !groqKey || !anthropicKey) return
+    const fileToProcess = cachedFile || file
     setError('')
     setStage('transcribing')
     setProgress(5)
     setStatusMsg('Preparing audio...')
     try {
-      const chunks = await splitAudioIntoChunks(file, setStatusMsg)
+      const chunks = await splitAudioIntoChunks(fileToProcess, setStatusMsg)
       const totalChunks = chunks.length
       const allSegments: Segment[] = []
       let fullText = ''
