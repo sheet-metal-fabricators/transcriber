@@ -56,19 +56,20 @@ const LANGUAGES = [
 
 const CHUNK_SIZE_MB = 24
 const CHUNK_SIZE_BYTES = CHUNK_SIZE_MB * 1024 * 1024
+const MAX_CHUNK_SECONDS = 480 // 8 minutes per chunk — fits well under 25MB as WAV
 
 async function splitAudioIntoChunks(file: File): Promise<Blob[]> {
-  // If file is under limit, return as-is
-  if (file.size <= CHUNK_SIZE_BYTES) return [file]
-
-  // Decode audio, split into equal time chunks
+  // Decode audio to check duration and split by time
   const arrayBuffer = await file.arrayBuffer()
   const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
   await audioCtx.close()
 
+  // If short enough, return original file
+  if (audioBuffer.duration <= MAX_CHUNK_SECONDS && file.size <= CHUNK_SIZE_BYTES) return [file]
+
   const duration = audioBuffer.duration
-  const numChunks = Math.ceil(file.size / CHUNK_SIZE_BYTES)
+  const numChunks = Math.ceil(duration / MAX_CHUNK_SECONDS)
   const chunkDuration = duration / numChunks
   const sampleRate = audioBuffer.sampleRate
   const chunks: Blob[] = []
@@ -111,7 +112,9 @@ function encodeWav(samples: Float32Array, sampleRate: number): Blob {
   return new Blob([buf], { type: 'audio/wav' })
 }
 
-async function transcribeChunk(blob: Blob, groqKey: string, language: string, index: number, total: number): Promise<{ text: string; segments: Segment[]; language: string; duration: number }> {
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+async function transcribeChunk(blob: Blob, groqKey: string, language: string, index: number, total: number, retries = 5): Promise<{ text: string; segments: Segment[]; language: string; duration: number }> {
   const fd = new FormData()
   const fileName = `chunk_${index + 1}.wav`
   fd.append('file', new File([blob], fileName, { type: 'audio/wav' }))
@@ -128,7 +131,15 @@ async function transcribeChunk(blob: Blob, groqKey: string, language: string, in
 
   if (!res.ok) {
     const err = await res.json()
-    throw new Error(`Chunk ${index + 1}/${total} failed: ${err.error?.message || res.status}`)
+    const msg = err.error?.message || ''
+    // Rate limit — wait and retry
+    if (res.status === 429 && retries > 0) {
+      const waitMatch = msg.match(/try again in ([\d.]+)s/)
+      const waitMs = waitMatch ? Math.ceil(parseFloat(waitMatch[1]) * 1000) + 500 : 4000
+      await sleep(waitMs)
+      return transcribeChunk(blob, groqKey, language, index, total, retries - 1)
+    }
+    throw new Error(`Chunk ${index + 1}/${total} failed: ${msg || res.status}`)
   }
 
   return res.json()
@@ -233,6 +244,12 @@ export default function Home() {
       for (let i = 0; i < totalChunks; i++) {
         setStatusMsg(`Transcribing chunk ${i + 1} of ${totalChunks}...`)
         setProgress(5 + Math.round(((i) / totalChunks) * 50))
+
+        // Throttle: wait 3s between chunks to stay under Groq free tier (20 RPM)
+        if (i > 0) {
+          setStatusMsg(`Chunk ${i} done. Waiting 3s to avoid rate limit...`)
+          await sleep(3000)
+        }
 
         const result = await transcribeChunk(chunks[i], groqKey, language, i, totalChunks)
 
