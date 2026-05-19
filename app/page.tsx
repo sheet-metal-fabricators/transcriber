@@ -54,32 +54,30 @@ const LANGUAGES = [
   { code: 'uk', label: '🇺🇦 Ukrainian' },
 ]
 
-const CHUNK_SIZE_MB = 24
-const CHUNK_SIZE_BYTES = CHUNK_SIZE_MB * 1024 * 1024
-const MAX_CHUNK_SECONDS = 480 // 8 minutes per chunk — fits well under 25MB as WAV
+// Target 8kHz mono WAV — good enough for speech, ~1MB per minute
+const TARGET_SAMPLE_RATE = 8000
+const MAX_CHUNK_SECONDS = 300 // 5 minutes per chunk = ~5MB WAV at 8kHz
 
-async function splitAudioIntoChunks(file: File): Promise<Blob[]> {
-  // Decode audio to check duration and split by time
+async function splitAudioIntoChunks(file: File, onProgress?: (msg: string) => void): Promise<Blob[]> {
+  onProgress?.('Decoding audio (this may take a moment for large files)...')
   const arrayBuffer = await file.arrayBuffer()
   const audioCtx = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
   const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer)
   await audioCtx.close()
 
-  // If short enough, return original file
-  if (audioBuffer.duration <= MAX_CHUNK_SECONDS && file.size <= CHUNK_SIZE_BYTES) return [file]
-
   const duration = audioBuffer.duration
   const numChunks = Math.ceil(duration / MAX_CHUNK_SECONDS)
   const chunkDuration = duration / numChunks
-  const sampleRate = audioBuffer.sampleRate
+  const srcRate = audioBuffer.sampleRate
   const chunks: Blob[] = []
 
   for (let i = 0; i < numChunks; i++) {
-    const startSample = Math.floor(i * chunkDuration * sampleRate)
-    const endSample = Math.min(Math.floor((i + 1) * chunkDuration * sampleRate), audioBuffer.length)
+    onProgress?.(`Preparing chunk ${i + 1} of ${numChunks}...`)
+    const startSample = Math.floor(i * chunkDuration * srcRate)
+    const endSample = Math.min(Math.floor((i + 1) * chunkDuration * srcRate), audioBuffer.length)
     const chunkLength = endSample - startSample
 
-    // Mix to mono
+    // Mix to mono at source rate
     const mono = new Float32Array(chunkLength)
     for (let ch = 0; ch < audioBuffer.numberOfChannels; ch++) {
       const channelData = audioBuffer.getChannelData(ch)
@@ -87,7 +85,15 @@ async function splitAudioIntoChunks(file: File): Promise<Blob[]> {
     }
     for (let s = 0; s < chunkLength; s++) mono[s] /= audioBuffer.numberOfChannels
 
-    chunks.push(encodeWav(mono, sampleRate))
+    // Downsample to TARGET_SAMPLE_RATE (8kHz) — reduces size ~6x vs 48kHz
+    const ratio = srcRate / TARGET_SAMPLE_RATE
+    const outLength = Math.floor(chunkLength / ratio)
+    const downsampled = new Float32Array(outLength)
+    for (let s = 0; s < outLength; s++) {
+      downsampled[s] = mono[Math.floor(s * ratio)]
+    }
+
+    chunks.push(encodeWav(downsampled, TARGET_SAMPLE_RATE))
   }
 
   return chunks
@@ -231,7 +237,7 @@ export default function Home() {
       const needsChunking = file.size > CHUNK_SIZE_BYTES
       setStatusMsg(needsChunking ? `Splitting file into chunks...` : 'Uploading to Groq Whisper...')
 
-      const chunks = await splitAudioIntoChunks(file)
+      const chunks = await splitAudioIntoChunks(file, setStatusMsg)
       const totalChunks = chunks.length
 
       // Transcribe each chunk
@@ -383,7 +389,7 @@ export default function Home() {
                 <div className={styles.fileName}>{file.name}</div>
                 <div className={styles.fileMeta}>
                   {formatSize(file.size)}
-                  {file.size > CHUNK_SIZE_BYTES && <span className={styles.chunkBadge}> · will auto-split into {Math.ceil(file.size / CHUNK_SIZE_BYTES)} chunks</span>}
+                  <span className={styles.chunkBadge}> · large files auto-split & compressed</span>
                 </div>
               </div>
               <button className={styles.changeBtn} onClick={e => { e.stopPropagation(); fileInputRef.current?.click() }}>Change</button>
