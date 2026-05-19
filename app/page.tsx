@@ -220,19 +220,13 @@ export default function Home() {
     if (!groqKey) { setError('Groq API key required'); return }
     setError('')
     try {
-      // Request screen + system audio
       const stream = await (navigator.mediaDevices as unknown as {
         getDisplayMedia: (c: object) => Promise<MediaStream>
       }).getDisplayMedia({
         video: true,
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          sampleRate: 44100,
-        },
+        audio: { echoCancellation: false, noiseSuppression: false, sampleRate: 44100 },
       })
 
-      // Check if audio track was granted
       const audioTracks = stream.getAudioTracks()
       if (audioTracks.length === 0) {
         stream.getTracks().forEach(t => t.stop())
@@ -240,60 +234,65 @@ export default function Home() {
         return
       }
 
-      // Keep only audio, drop video to save bandwidth
-      const audioStream = new MediaStream(audioTracks)
       liveStreamRef.current = stream
-
       liveChunksRef.current = []
       setLiveTranscriptText('')
       setLiveSeconds(0)
       setLiveWords(0)
       setLiveRecording(true)
+      setStage('idle')
+      setError('')
 
-      const recorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' })
+      // Record audio only
+      const audioStream = new MediaStream(audioTracks)
+      
+      // Pick supported mime type
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/ogg'
+
+      const recorder = new MediaRecorder(audioStream, { mimeType })
       mediaRecorderRef.current = recorder
 
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) liveChunksRef.current.push(e.data)
       }
 
-      // Collect in 60-second intervals and transcribe each
-      recorder.start(60000)
+      // Request data every 30s for live preview transcription
+      recorder.start(30000)
 
-      let segmentIndex = 0
-      let timeOffset = 0
-
-      const processChunk = async () => {
-        if (liveChunksRef.current.length <= segmentIndex) return
-        const blob = new Blob(liveChunksRef.current.slice(segmentIndex), { type: 'audio/webm' })
-        segmentIndex = liveChunksRef.current.length
-        try {
-          const result = await transcribeBlob(blob, groqKey, language, `Segment ${segmentIndex}`)
-          const newText = result.text.trim()
-          if (newText) {
-            setLiveTranscriptText(prev => prev + (prev ? ' ' : '') + newText)
-            setLiveWords(prev => prev + newText.split(/\s+/).filter(Boolean).length)
-            timeOffset += result.duration || 60
-          }
-        } catch (err) {
-          console.error('Live chunk error:', err)
-        }
-      }
-
-      // Process every 60 seconds
-      liveTimerRef.current = setInterval(async () => {
+      // Timer for display
+      liveTimerRef.current = setInterval(() => {
         setLiveSeconds(s => s + 1)
-        if (liveChunksRef.current.length > segmentIndex) {
-          await processChunk()
-        }
       }, 1000)
 
-      // Stop when screen share ends
+      // Live preview: transcribe accumulated audio every 60s
+      const previewInterval = setInterval(async () => {
+        if (liveChunksRef.current.length === 0) return
+        try {
+          const blob = new Blob([...liveChunksRef.current], { type: mimeType })
+          const result = await transcribeBlob(blob, groqKey, language, 'Preview')
+          const newText = result.text.trim()
+          if (newText) {
+            setLiveTranscriptText(newText) // Show full rolling transcript
+            setLiveWords(newText.split(/\s+/).filter(Boolean).length)
+          }
+        } catch { /* preview errors are non-fatal */ }
+      }, 60000)
+
+      // Store interval ref for cleanup
+      ;(recorder as unknown as { _previewInterval: NodeJS.Timeout })._previewInterval = previewInterval
+
+      // Auto-stop when user ends screen share
       stream.getVideoTracks()[0]?.addEventListener('ended', () => stopLiveCapture())
+      // Also handle audio track ending
+      audioTracks[0]?.addEventListener('ended', () => stopLiveCapture())
 
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Could not start capture'
-      if (msg.includes('Permission denied') || msg.includes('NotAllowedError')) {
+      if (msg.includes('Permission denied') || msg.includes('NotAllowedError') || msg.includes('cancelled')) {
         setError('Screen share was cancelled. Click "Start Live Capture" and then click Share.')
       } else {
         setError(msg)
@@ -303,47 +302,84 @@ export default function Home() {
 
   const stopLiveCapture = async () => {
     if (liveTimerRef.current) clearInterval(liveTimerRef.current)
-    mediaRecorderRef.current?.stop()
+    
+    // Clear preview interval
+    const recorder = mediaRecorderRef.current as unknown as { _previewInterval?: NodeJS.Timeout } & MediaRecorder | null
+    if (recorder?._previewInterval) clearInterval(recorder._previewInterval)
+    
+    // Stop all tracks
     liveStreamRef.current?.getTracks().forEach(t => t.stop())
     setLiveRecording(false)
 
-    // Final transcription of remaining audio
-    if (liveChunksRef.current.length > 0 && groqKey) {
-      setStage('transcribing')
-      setStatusMsg('Finalizing live transcript...')
-      try {
-        const blob = new Blob(liveChunksRef.current, { type: 'audio/webm' })
-        const result = await transcribeBlob(blob, groqKey, language, 'Final segment')
-        const finalText = liveTranscriptText + (liveTranscriptText ? ' ' : '') + result.text.trim()
+    if (!mediaRecorderRef.current || liveChunksRef.current.length === 0) {
+      setError('No audio was captured. Make sure to check "Share system audio" when sharing.')
+      return
+    }
 
-        const tData: TranscriptResult = {
-          text: finalText,
-          segments: [],
-          language: result.language || 'en',
-          duration: liveSeconds,
-        }
-        setTranscript(tData)
+    // Wait for final data
+    await new Promise<void>(resolve => {
+      if (mediaRecorderRef.current?.state === 'inactive') { resolve(); return }
+      mediaRecorderRef.current!.onstop = () => resolve()
+      mediaRecorderRef.current?.stop()
+    })
 
-        if (anthropicKey && finalText) {
-          setStage('analyzing')
-          setStatusMsg('Analyzing speakers...')
-          const aRes = await fetch('/api/analyze', {
-            method: 'POST',
-            headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ transcript: finalText, segments: [] }),
-          })
-          const aData = await aRes.json()
-          if (aRes.ok) setAnalysis(aData)
-        }
+    setStage('transcribing')
+    setProgress(20)
+    setStatusMsg('Transcribing your recording...')
 
-        setProgress(100)
-        setStage('done')
-        setActiveTab('summary')
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Finalization failed'
-        setError(msg)
+    try {
+      const mimeType = mediaRecorderRef.current?.mimeType || 'audio/webm'
+      const blob = new Blob(liveChunksRef.current, { type: mimeType })
+      
+      // Split into 2-min chunks if recording is long
+      const ext = mimeType.includes('ogg') ? 'ogg' : 'webm'
+      const file = new File([blob], `recording.${ext}`, { type: mimeType })
+      
+      setStatusMsg('Sending to Whisper...')
+      setProgress(40)
+
+      const result = await transcribeBlob(blob, groqKey, language, 'Recording')
+      const finalText = result.text.trim()
+
+      if (!finalText) {
+        setError('No speech detected in the recording. Make sure system audio was shared.')
         setStage('error')
+        return
       }
+
+      const tData: TranscriptResult = {
+        text: finalText,
+        segments: result.segments || [],
+        language: result.language || 'en',
+        duration: result.duration || liveSeconds,
+      }
+      setTranscript(tData)
+      setProgress(60)
+
+      if (anthropicKey) {
+        setStage('analyzing')
+        setStatusMsg('Analyzing speakers and generating summary...')
+        const aRes = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: finalText, segments: result.segments || [] }),
+        })
+        const aData = await aRes.json()
+        if (aRes.ok) {
+          setAnalysis(aData)
+        }
+      }
+
+      setProgress(100)
+      setStage('done')
+      setActiveTab('summary')
+      setStealth(false) // Auto-show results if in stealth mode
+
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Transcription failed'
+      setError(msg)
+      setStage('error')
+      setStealth(false)
     }
   }
 
@@ -448,6 +484,10 @@ export default function Home() {
 
   // ── Stealth mode ──────────────────────────────────────────
   if (stealth) {
+    const isDone = stage === 'done'
+    const isProcessing = stage === 'transcribing' || stage === 'analyzing'
+    const dotColor = isDone ? '#6c63ff' : isProcessing ? '#f59e0b' : liveRecording ? '#30d158' : '#6c63ff'
+    const label = isDone ? '✓ Done — click to view' : isProcessing ? statusMsg.slice(0, 20) + '...' : liveRecording ? `REC ${formatLiveTime(liveSeconds)}` : 'Show'
     return (
       <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 9999 }}>
         <button
@@ -455,14 +495,15 @@ export default function Home() {
           style={{
             position: 'fixed', bottom: 20, right: 20,
             background: '#1a1a2e', color: '#fff',
-            border: 'none', borderRadius: 20,
-            padding: '6px 14px', fontSize: 12,
+            border: isDone ? '2px solid #6c63ff' : 'none',
+            borderRadius: 20, padding: '6px 14px', fontSize: 12,
             cursor: 'pointer', display: 'flex',
             alignItems: 'center', gap: 6, zIndex: 10000,
+            boxShadow: isDone ? '0 0 12px rgba(108,99,255,0.6)' : 'none',
           }}
         >
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: liveRecording ? '#30d158' : '#6c63ff', display: 'inline-block' }} />
-          {liveRecording ? `REC ${formatLiveTime(liveSeconds)}` : 'Show'}
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, display: 'inline-block', animation: (liveRecording || isProcessing) ? 'pulse 1s infinite' : 'none' }} />
+          {label}
         </button>
       </div>
     )
