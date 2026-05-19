@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import styles from './page.module.css'
 
-type Stage = 'idle' | 'uploading' | 'transcribing' | 'analyzing' | 'done' | 'error'
+type Stage = 'idle' | 'transcribing' | 'analyzing' | 'done' | 'error'
 
 interface Segment {
   start: number
@@ -24,7 +24,6 @@ interface Analysis {
   summary: string
   key_points: string[]
   sentiment: string
-  duration_note: string
 }
 
 const LANGUAGES = [
@@ -73,23 +72,26 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  // Load saved keys on mount
   useEffect(() => {
-    const savedGroq = localStorage.getItem('groq_key')
-    const savedAnthropic = localStorage.getItem('anthropic_key')
-    if (savedGroq) { setGroqKey(savedGroq); setRememberKeys(true) }
-    if (savedAnthropic) { setAnthropicKey(savedAnthropic); setRememberKeys(true) }
+    const g = localStorage.getItem('groq_key')
+    const a = localStorage.getItem('anthropic_key')
+    if (g) { setGroqKey(g); setRememberKeys(true) }
+    if (a) { setAnthropicKey(a); setRememberKeys(true) }
   }, [])
 
-  // Save/clear keys when rememberKeys or keys change
+  useEffect(() => {
+    if (rememberKeys) {
+      if (groqKey) localStorage.setItem('groq_key', groqKey)
+      if (anthropicKey) localStorage.setItem('anthropic_key', anthropicKey)
+    }
+  }, [groqKey, anthropicKey, rememberKeys])
+
   const handleSaveKeys = () => {
     if (rememberKeys) {
-      // Currently ON — turn off and clear
       localStorage.removeItem('groq_key')
       localStorage.removeItem('anthropic_key')
       setRememberKeys(false)
     } else {
-      // Currently OFF — save and turn on
       if (groqKey) localStorage.setItem('groq_key', groqKey)
       if (anthropicKey) localStorage.setItem('anthropic_key', anthropicKey)
       setRememberKeys(true)
@@ -97,14 +99,6 @@ export default function Home() {
       setTimeout(() => setSavedBadge(false), 2000)
     }
   }
-
-  // Update localStorage live when keys change and rememberKeys is on
-  useEffect(() => {
-    if (rememberKeys) {
-      if (groqKey) localStorage.setItem('groq_key', groqKey)
-      if (anthropicKey) localStorage.setItem('anthropic_key', anthropicKey)
-    }
-  }, [groqKey, anthropicKey, rememberKeys])
 
   const handleFile = (f: File) => {
     setFile(f)
@@ -122,43 +116,43 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const formatDuration = (seconds: number) => {
-    const m = Math.floor(seconds / 60)
-    const s = Math.floor(seconds % 60)
-    return `${m}m ${s}s`
-  }
-
-  const formatSize = (bytes: number) => {
-    if (bytes > 1024 * 1024) return (bytes / 1024 / 1024).toFixed(1) + ' MB'
-    return (bytes / 1024).toFixed(0) + ' KB'
-  }
+  const formatDuration = (s: number) => `${Math.floor(s / 60)}m ${Math.floor(s % 60)}s`
+  const formatSize = (b: number) => b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : (b / 1024).toFixed(0) + ' KB'
 
   const run = async () => {
     if (!file || !groqKey || !anthropicKey) return
     setError('')
     setStage('transcribing')
     setProgress(10)
-    setStatusMsg('Sending audio to Whisper...')
+    setStatusMsg('Uploading to Groq Whisper...')
 
     try {
+      // Step 1: Call Groq API DIRECTLY from browser (bypasses Vercel size limit)
       const fd = new FormData()
       fd.append('file', file)
+      fd.append('model', 'whisper-large-v3')
+      fd.append('response_format', 'verbose_json')
+      fd.append('timestamp_granularities[]', 'segment')
       if (language !== 'auto') fd.append('language', language)
 
-      const tRes = await fetch('/api/transcribe', {
+      const groqRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
-        headers: { 'x-groq-key': groqKey },
+        headers: { 'Authorization': `Bearer ${groqKey}` },
         body: fd,
       })
 
-      const tData = await tRes.json()
-      if (!tRes.ok) throw new Error(tData.error || 'Transcription failed')
+      if (!groqRes.ok) {
+        const err = await groqRes.json()
+        throw new Error(err.error?.message || `Groq error ${groqRes.status}`)
+      }
 
+      const tData = await groqRes.json()
       setTranscript(tData)
       setProgress(55)
-      setStatusMsg('Transcript ready. Analyzing speakers...')
+      setStatusMsg('Analyzing speakers and generating summary...')
       setStage('analyzing')
 
+      // Step 2: Send transcript to our API route (text only, small payload)
       const aRes = await fetch('/api/analyze', {
         method: 'POST',
         headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
@@ -180,11 +174,9 @@ export default function Home() {
   }
 
   const copyText = (text: string) => navigator.clipboard.writeText(text)
-
   const downloadTxt = (text: string, name: string) => {
-    const blob = new Blob([text], { type: 'text/plain' })
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(blob)
+    a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
     a.download = name
     a.click()
   }
@@ -235,7 +227,6 @@ export default function Home() {
             <button
               className={`${styles.rememberBtn} ${rememberKeys ? styles.rememberOn : ''}`}
               onClick={handleSaveKeys}
-              title={rememberKeys ? 'Keys saved in browser — click to forget' : 'Save keys in browser'}
             >
               {savedBadge ? '✓ Saved!' : rememberKeys ? '🔒 Forget keys' : '💾 Remember keys'}
             </button>
@@ -270,15 +261,12 @@ export default function Home() {
             </>
           )}
         </div>
-
         <div className={styles.langRow}>
           <label className={styles.langLabel}>🌐 Language</label>
           <select className={styles.langSelect} value={language} onChange={e => setLanguage(e.target.value)}>
             {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
           </select>
-          <span className={styles.langHint}>
-            {language === 'auto' ? 'Whisper will detect automatically' : 'Manually set — improves accuracy'}
-          </span>
+          <span className={styles.langHint}>{language === 'auto' ? 'Whisper will detect automatically' : 'Manually set — improves accuracy'}</span>
         </div>
       </div>
 
@@ -292,12 +280,8 @@ export default function Home() {
         <div className={styles.progressWrap}>
           <div className={styles.progressBar} style={{ width: `${progress}%` }} />
           <div className={styles.progressSteps}>
-            <span className={stage === 'transcribing' ? styles.stepActive : styles.stepDone}>
-              {stage === 'transcribing' ? '⏳' : '✓'} Transcribing
-            </span>
-            <span className={stage === 'analyzing' ? styles.stepActive : styles.stepWaiting}>
-              {stage === 'analyzing' ? '⏳' : '○'} Analyzing
-            </span>
+            <span className={stage === 'transcribing' ? styles.stepActive : styles.stepDone}>{stage === 'transcribing' ? '⏳' : '✓'} Transcribing</span>
+            <span className={stage === 'analyzing' ? styles.stepActive : styles.stepWaiting}>{stage === 'analyzing' ? '⏳' : '○'} Analyzing</span>
           </div>
         </div>
       )}
@@ -313,7 +297,6 @@ export default function Home() {
             <div className={styles.stat}><span className={styles.statVal} style={{ color: sentimentColor(analysis.sentiment) }}>{analysis.sentiment}</span><span className={styles.statKey}>Sentiment</span></div>
             <div className={styles.stat}><span className={styles.statVal}>{transcript.text.split(/\s+/).length}</span><span className={styles.statKey}>Words</span></div>
           </div>
-
           <div className={styles.tabs}>
             {(['summary', 'labeled', 'transcript'] as const).map(tab => (
               <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
@@ -321,7 +304,6 @@ export default function Home() {
               </button>
             ))}
           </div>
-
           <div className={styles.tabContent}>
             {activeTab === 'summary' && (
               <div className={styles.summaryView}>
