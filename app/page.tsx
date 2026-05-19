@@ -123,7 +123,9 @@ async function transcribeBlob(blob: Blob, groqKey: string, language: string, lab
 }
 
 export default function Home() {
+  const [engine, setEngine] = useState<'groq' | 'assemblyai'>('groq')
   const [groqKey, setGroqKey] = useState('')
+  const [assemblyaiKey, setAssemblyaiKey] = useState('')
   const [anthropicKey, setAnthropicKey] = useState('')
   const [showKeys, setShowKeys] = useState(false)
   const [rememberKeys, setRememberKeys] = useState(false)
@@ -164,21 +166,25 @@ export default function Home() {
   useEffect(() => {
     const g = localStorage.getItem('groq_key')
     const a = localStorage.getItem('anthropic_key')
+    const ai = localStorage.getItem('assemblyai_key')
     if (g) { setGroqKey(g); setRememberKeys(true) }
     if (a) { setAnthropicKey(a); setRememberKeys(true) }
+    if (ai) { setAssemblyaiKey(ai); setRememberKeys(true) }
   }, [])
 
   useEffect(() => {
     if (rememberKeys) {
       if (groqKey) localStorage.setItem('groq_key', groqKey)
       if (anthropicKey) localStorage.setItem('anthropic_key', anthropicKey)
+      if (assemblyaiKey) localStorage.setItem('assemblyai_key', assemblyaiKey)
     }
-  }, [groqKey, anthropicKey, rememberKeys])
+  }, [groqKey, anthropicKey, assemblyaiKey, rememberKeys])
 
   const handleSaveKeys = () => {
     if (rememberKeys) {
       localStorage.removeItem('groq_key')
       localStorage.removeItem('anthropic_key')
+      localStorage.removeItem('assemblyai_key')
       setRememberKeys(false)
     } else {
       if (groqKey) localStorage.setItem('groq_key', groqKey)
@@ -395,6 +401,90 @@ export default function Home() {
     }
   }
 
+  // ── AssemblyAI transcription ─────────────────────────────────
+  const runAssemblyAI = async () => {
+    if (!file || !assemblyaiKey) return
+    setError('')
+    setStage('transcribing')
+    setProgress(10)
+    setStatusMsg('Uploading audio to AssemblyAI...')
+
+    try {
+      const fileToUse = cachedFile || file
+
+      // Step 1: Upload file to AssemblyAI storage
+      const uploadFd = new FormData()
+      uploadFd.append('file', fileToUse)
+      const uploadRes = await fetch('/api/assemblyai-upload', {
+        method: 'POST',
+        headers: { 'x-assemblyai-key': assemblyaiKey },
+        body: uploadFd,
+      })
+      const uploadData = await uploadRes.json()
+      if (!uploadRes.ok) throw new Error(uploadData.error || 'Upload failed')
+
+      setProgress(30)
+      setStatusMsg('Transcribing with real speaker detection...')
+
+      // Step 2: Transcribe with speaker diarization
+      const fd = new FormData()
+      fd.append('upload_url', uploadData.upload_url)
+      if (language !== 'auto') fd.append('language', language)
+
+      const tRes = await fetch('/api/assemblyai', {
+        method: 'POST',
+        headers: { 'x-assemblyai-key': assemblyaiKey },
+        body: fd,
+      })
+      const tData = await tRes.json()
+      if (!tRes.ok) throw new Error(tData.error || 'Transcription failed')
+
+      setProgress(80)
+
+      const transcript: TranscriptResult = {
+        text: tData.text,
+        segments: tData.segments,
+        language: tData.language || 'en',
+        duration: tData.duration,
+      }
+      setTranscript(transcript)
+
+      // Build analysis from AssemblyAI speaker data
+      const assemblyAnalysis: Analysis = {
+        speakers: tData.speakers,
+        labeled_transcript: tData.labeled_transcript,
+        summary: '',
+        key_points: [],
+        sentiment: 'neutral',
+      }
+
+      // Optionally enhance with Claude summary
+      if (anthropicKey && tData.text) {
+        setStatusMsg('Generating summary with Claude...')
+        const aRes = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: tData.text, segments: tData.segments }),
+        })
+        const aData = await aRes.json()
+        if (aRes.ok) {
+          assemblyAnalysis.summary = aData.summary
+          assemblyAnalysis.key_points = aData.key_points
+          assemblyAnalysis.sentiment = aData.sentiment
+        }
+      }
+
+      setAnalysis(assemblyAnalysis)
+      setProgress(100)
+      setStage('done')
+      setActiveTab(assemblyAnalysis.speakers.length > 0 ? 'labeled' : 'transcript')
+
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Something went wrong')
+      setStage('error')
+    }
+  }
+
   // ── File transcription ────────────────────────────────────
   const runFileTranscription = async () => {
     if (!file || !groqKey || !anthropicKey) return
@@ -435,17 +525,21 @@ export default function Home() {
       setStatusMsg('Analyzing speakers...')
       setStage('analyzing')
 
-      const aRes = await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transcript: tData.text, segments: tData.segments }),
-      })
-      const aData = await aRes.json()
-      if (!aRes.ok) throw new Error(aData.error || 'Analysis failed')
-      setAnalysis(aData)
+      if (anthropicKey) {
+        const aRes = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'x-anthropic-key': anthropicKey, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ transcript: tData.text, segments: tData.segments }),
+        })
+        const aData = await aRes.json()
+        if (!aRes.ok) throw new Error(aData.error || 'Analysis failed')
+        setAnalysis(aData)
+        setActiveTab('summary')
+      } else {
+        setActiveTab('transcript')
+      }
       setProgress(100)
       setStage('done')
-      setActiveTab('summary')
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Something went wrong')
       setStage('error')
@@ -492,7 +586,7 @@ export default function Home() {
   const formatLiveTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`
   const sentimentColor = (s: string) => s === 'positive' ? '#3ecf8e' : s === 'negative' ? '#ef4444' : '#f59e0b'
   const seekTo = (t: number) => { if (mediaRef.current) { mediaRef.current.currentTime = t; mediaRef.current.play() } }
-  const isReady = file && groqKey && anthropicKey && stage !== 'transcribing' && stage !== 'analyzing'
+  const isReady = file && (engine === 'groq' ? groqKey : assemblyaiKey) && stage !== 'transcribing' && stage !== 'analyzing'
 
   // ── Stealth mode ──────────────────────────────────────────
   if (stealth) {
@@ -542,24 +636,50 @@ export default function Home() {
           <span className={styles.cardLabel}>API Keys</span>
           <button className={styles.toggleBtn} onClick={() => setShowKeys(!showKeys)}>{showKeys ? 'Hide' : 'Show'}</button>
         </div>
+        {/* Engine selector */}
+        <div className={styles.engineRow}>
+          <span className={styles.engineLabel}>Engine:</span>
+          <button className={`${styles.engineBtn} ${engine === 'groq' ? styles.engineActive : ''}`} onClick={() => setEngine('groq')}>
+            ⚡ Groq Whisper <span className={styles.tag}>Free</span>
+          </button>
+          <button className={`${styles.engineBtn} ${engine === 'assemblyai' ? styles.engineActive : ''}`} onClick={() => setEngine('assemblyai')}>
+            🎯 AssemblyAI <span className={styles.tagPro}>Real Speakers</span>
+          </button>
+        </div>
+
         {showKeys && (
           <div className={styles.keyGrid}>
+            {engine === 'groq' && (
+              <div className={styles.keyField}>
+                <label>Groq API Key <span className={styles.tag}>Free</span></label>
+                <input type="password" placeholder="gsk_..." value={groqKey} onChange={e => setGroqKey(e.target.value)} className={styles.input} />
+                <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className={styles.link}>Get free key →</a>
+              </div>
+            )}
+            {engine === 'assemblyai' && (
+              <div className={styles.keyField}>
+                <label>AssemblyAI API Key <span className={styles.tagPro}>Real Speaker Detection</span></label>
+                <input type="password" placeholder="your_assemblyai_key..." value={assemblyaiKey} onChange={e => setAssemblyaiKey(e.target.value)} className={styles.input} />
+                <a href="https://www.assemblyai.com/dashboard/signup" target="_blank" rel="noreferrer" className={styles.link}>Get free key ($50 credit) →</a>
+              </div>
+            )}
             <div className={styles.keyField}>
-              <label>Groq API Key <span className={styles.tag}>Free</span></label>
-              <input type="password" placeholder="gsk_..." value={groqKey} onChange={e => setGroqKey(e.target.value)} className={styles.input} />
-              <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" className={styles.link}>Get free key →</a>
-            </div>
-            <div className={styles.keyField}>
-              <label>Anthropic API Key</label>
+              <label>Anthropic API Key <span style={{fontSize:'0.65rem',color:'var(--muted)'}}>Optional — for summary</span></label>
               <input type="password" placeholder="sk-ant-..." value={anthropicKey} onChange={e => setAnthropicKey(e.target.value)} className={styles.input} />
               <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" className={styles.link}>Get key →</a>
             </div>
           </div>
         )}
-        {(!groqKey || !anthropicKey) && <p className={styles.keyHint}>⚠ Enter both API keys to enable transcription</p>}
+
+        {engine === 'groq' && !groqKey && <p className={styles.keyHint}>⚠ Enter your Groq API key to enable transcription</p>}
+        {engine === 'assemblyai' && !assemblyaiKey && <p className={styles.keyHint}>⚠ Enter your AssemblyAI API key to enable transcription</p>}
+        {engine === 'groq' && groqKey && !anthropicKey && <p className={styles.keyHint} style={{color:'#f59e0b'}}>⚠ Without an Anthropic key, speaker labels and summary won't be available — or switch to AssemblyAI for real speaker detection</p>}
         {groqKey && anthropicKey && (
           <div className={styles.keyReadyRow}>
-            <p className={styles.keyReady}>✓ API keys configured{rememberKeys && <span className={styles.savedNote}> · saved in this browser</span>}</p>
+            <p className={styles.keyReady}>
+              {groqKey && anthropicKey ? '✓ All features enabled' : '✓ Transcription ready (no summary/speakers)'}
+              {rememberKeys && <span className={styles.savedNote}> · saved in this browser</span>}
+            </p>
             <button className={`${styles.rememberBtn} ${rememberKeys ? styles.rememberOn : ''}`} onClick={handleSaveKeys}>
               {savedBadge ? '✓ Saved!' : rememberKeys ? '🔒 Forget keys' : '💾 Remember keys'}
             </button>
@@ -782,33 +902,40 @@ export default function Home() {
       {error && <div className={styles.errorBox}><span>⚠</span> {error}</div>}
 
       {/* Results */}
-      {stage === 'done' && analysis && transcript && (
+      {stage === 'done' && transcript && (
         <div className={styles.results}>
           <div className={styles.statsRow}>
             <div className={styles.stat}><span className={styles.statVal}>{transcript.language?.toUpperCase() || '—'}</span><span className={styles.statKey}>Language</span></div>
             <div className={styles.stat}><span className={styles.statVal}>{formatDuration(transcript.duration)}</span><span className={styles.statKey}>Duration</span></div>
-            <div className={styles.stat}><span className={styles.statVal}>{analysis.speakers.length}</span><span className={styles.statKey}>Speakers</span></div>
-            <div className={styles.stat}><span className={styles.statVal} style={{ color: sentimentColor(analysis.sentiment) }}>{analysis.sentiment}</span><span className={styles.statKey}>Sentiment</span></div>
+            <div className={styles.stat}><span className={styles.statVal}>{analysis ? analysis.speakers.length : '—'}</span><span className={styles.statKey}>Speakers</span></div>
+            <div className={styles.stat}><span className={styles.statVal} style={{ color: analysis ? sentimentColor(analysis.sentiment) : 'var(--muted)' }}>{analysis ? analysis.sentiment : '—'}</span><span className={styles.statKey}>Sentiment</span></div>
             <div className={styles.stat}><span className={styles.statVal}>{transcript.text.split(/\s+/).length}</span><span className={styles.statKey}>Words</span></div>
           </div>
 
           <div className={styles.tabs}>
-            {(['summary', 'labeled', 'transcript', 'export'] as const).map(tab => (
-              <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
-                {tab === 'summary' ? '📋 Summary' : tab === 'labeled' ? '👥 Speakers' : tab === 'transcript' ? '📝 Transcript' : '⬇ Export'}
-              </button>
-            ))}
+            {(['summary', 'labeled', 'transcript', 'export'] as const)
+              .filter(tab => analysis || tab === 'transcript' || tab === 'export')
+              .map(tab => (
+                <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
+                  {tab === 'summary' ? '📋 Summary' : tab === 'labeled' ? '👥 Speakers' : tab === 'transcript' ? '📝 Transcript' : '⬇ Export'}
+                </button>
+              ))}
           </div>
+          {!analysis && (
+            <div className={styles.noAnalysisBanner}>
+              💡 Add an <strong>Anthropic API key</strong> to unlock speaker labels, summary, and sentiment analysis.
+            </div>
+          )}
 
           <div className={styles.tabContent}>
-            {activeTab === 'summary' && (
+            {activeTab === 'summary' && analysis && (
               <div className={styles.summaryView}>
                 <div className={styles.summarySection}><h3>Summary</h3><p>{analysis.summary}</p></div>
                 <div className={styles.summarySection}><h3>Key Points</h3><ul className={styles.keyPoints}>{analysis.key_points.map((pt, i) => <li key={i}>{pt}</li>)}</ul></div>
                 <div className={styles.summarySection}><h3>Speakers</h3><div className={styles.speakerTags}>{analysis.speakers.map((s, i) => <span key={i} className={styles.speakerTag}>{s}</span>)}</div></div>
               </div>
             )}
-            {activeTab === 'labeled' && (
+            {activeTab === 'labeled' && analysis && (
               <div className={styles.transcriptView}>
                 <div className={styles.transcriptActions}>
                   <button className={styles.actionBtn} onClick={() => copyText(analysis.labeled_transcript)}>📋 Copy</button>
@@ -856,12 +983,12 @@ export default function Home() {
                   <div className={styles.exportCard}>
                     <div className={styles.exportIcon}>📄</div>
                     <div className={styles.exportInfo}><strong>Word Document (.doc)</strong><span>Formatted with summary, key points, and speaker dialogue</span></div>
-                    <button className={styles.exportBtn} onClick={() => downloadDocx(analysis.labeled_transcript, analysis.summary, analysis.key_points, 'transcript.doc')}>Download</button>
+                    <button className={styles.exportBtn} disabled={!analysis} onClick={() => analysis && downloadDocx(analysis.labeled_transcript, analysis.summary, analysis.key_points, 'transcript.doc')}>Download</button>
                   </div>
                   <div className={styles.exportCard}>
                     <div className={styles.exportIcon}>📊</div>
                     <div className={styles.exportInfo}><strong>Excel / CSV (.csv)</strong><span>Columns: Timestamp, Speaker, Text — opens in Excel</span></div>
-                    <button className={styles.exportBtn} onClick={() => downloadXlsx(transcript.segments, analysis.labeled_transcript, 'transcript.csv')}>Download</button>
+                    <button className={styles.exportBtn} disabled={!analysis} onClick={() => analysis && downloadXlsx(transcript.segments, analysis.labeled_transcript, 'transcript.csv')}>Download</button>
                   </div>
                   <div className={styles.exportCard}>
                     <div className={styles.exportIcon}>📝</div>
