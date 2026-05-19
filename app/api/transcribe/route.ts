@@ -4,6 +4,9 @@ import Groq from 'groq-sdk'
 export const runtime = 'nodejs'
 export const maxDuration = 300
 
+// Increase body size limit to 30MB for audio files
+export const fetchCache = 'force-no-store'
+
 interface VerboseTranscription {
   text: string
   segments?: { start: number; end: number; text: string }[]
@@ -20,9 +23,8 @@ export async function POST(req: NextRequest) {
     const file = formData.get('file') as File
     if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
-    // Check file size (Groq limit: 25MB)
     if (file.size > 25 * 1024 * 1024) {
-      return NextResponse.json({ error: 'File too large. Max size is 25MB. Please compress or trim the audio.' }, { status: 400 })
+      return NextResponse.json({ error: 'File too large. Max size is 25MB.' }, { status: 400 })
     }
 
     const groq = new Groq({ apiKey: groqKey })
@@ -31,8 +33,8 @@ export async function POST(req: NextRequest) {
       file: file,
       model: 'whisper-large-v3',
       response_format: 'verbose_json',
-      timestamp_granularities: ["segment"],
-      ...(formData.get("language") ? { language: formData.get("language") as string } : {}),
+      timestamp_granularities: ['segment'],
+      ...(formData.get('language') ? { language: formData.get('language') as string } : {}),
     }) as unknown as VerboseTranscription
 
     return NextResponse.json({

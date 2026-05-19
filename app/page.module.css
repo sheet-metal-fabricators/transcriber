@@ -480,3 +480,12 @@
   color: var(--success);
   font-size: 0.75rem;
 }
+
+.keyReadyRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}

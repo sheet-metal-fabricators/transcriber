@@ -207,20 +207,9 @@ export default function Home() {
       <div className={styles.card}>
         <div className={styles.cardHeader}>
           <span className={styles.cardLabel}>API Keys</span>
-          <div className={styles.cardHeaderRight}>
-            {groqKey && anthropicKey && (
-              <button
-                className={`${styles.rememberBtn} ${rememberKeys ? styles.rememberOn : ''}`}
-                onClick={handleSaveKeys}
-                title={rememberKeys ? 'Keys saved in browser — click to forget' : 'Save keys in browser'}
-              >
-                {savedBadge ? '✓ Saved!' : rememberKeys ? '🔒 Saved' : '💾 Remember keys'}
-              </button>
-            )}
-            <button className={styles.toggleBtn} onClick={() => setShowKeys(!showKeys)}>
-              {showKeys ? 'Hide' : 'Show'}
-            </button>
-          </div>
+          <button className={styles.toggleBtn} onClick={() => setShowKeys(!showKeys)}>
+            {showKeys ? 'Hide' : 'Show'}
+          </button>
         </div>
         {showKeys && (
           <div className={styles.keyGrid}>
@@ -238,10 +227,19 @@ export default function Home() {
         )}
         {(!groqKey || !anthropicKey) && <p className={styles.keyHint}>⚠ Enter both API keys above to enable transcription</p>}
         {groqKey && anthropicKey && (
-          <p className={styles.keyReady}>
-            ✓ API keys configured
-            {rememberKeys && <span className={styles.savedNote}> · saved in this browser</span>}
-          </p>
+          <div className={styles.keyReadyRow}>
+            <p className={styles.keyReady}>
+              ✓ API keys configured
+              {rememberKeys && <span className={styles.savedNote}> · saved in this browser</span>}
+            </p>
+            <button
+              className={`${styles.rememberBtn} ${rememberKeys ? styles.rememberOn : ''}`}
+              onClick={handleSaveKeys}
+              title={rememberKeys ? 'Keys saved in browser — click to forget' : 'Save keys in browser'}
+            >
+              {savedBadge ? '✓ Saved!' : rememberKeys ? '🔒 Forget keys' : '💾 Remember keys'}
+            </button>
+          </div>
         )}
       </div>
 
