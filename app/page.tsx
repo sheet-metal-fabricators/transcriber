@@ -993,7 +993,7 @@ export default function Home() {
                   <div className={styles.exportCard}>
                     <div className={styles.exportIcon}>📝</div>
                     <div className={styles.exportInfo}><strong>Plain Text (.txt)</strong><span>Speaker-labeled transcript as plain text</span></div>
-                    <button className={styles.exportBtn} onClick={() => downloadTxt(analysis.labeled_transcript, 'transcript.txt')}>Download</button>
+                    <button className={styles.exportBtn} disabled={!analysis} onClick={() => analysis && downloadTxt(analysis.labeled_transcript, 'transcript.txt')}>Download</button>
                   </div>
                   <div className={styles.exportCard}>
                     <div className={styles.exportIcon}>⏱</div>
