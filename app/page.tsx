@@ -167,7 +167,7 @@ export default function Home() {
   const [transcript, setTranscript] = useState<TranscriptResult | null>(null)
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [error, setError] = useState('')
-  const [activeTab, setActiveTab] = useState<'transcript' | 'labeled' | 'summary'>('summary')
+  const [activeTab, setActiveTab] = useState<'transcript' | 'labeled' | 'summary' | 'export'>('summary')
   const [isDragging, setIsDragging] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const mediaRef = useRef<HTMLVideoElement | HTMLAudioElement>(null)
@@ -307,6 +307,56 @@ export default function Home() {
   }
 
   const copyText = (text: string) => navigator.clipboard.writeText(text)
+
+  const downloadDocx = (labeledTranscript: string, summary: string, keyPoints: string[], fileName: string) => {
+    const lines = labeledTranscript.split('\n')
+    let html = `<html><head><meta charset="UTF-8"></head><body style="font-family:Calibri,sans-serif;font-size:12pt;max-width:800px;margin:40px auto">`
+    html += `<h1 style="color:#1a1a2e;border-bottom:2px solid #6c63ff;padding-bottom:8px">Call Transcript</h1>`
+    html += `<h2 style="color:#444;font-size:14pt">Summary</h2><p style="line-height:1.6">${summary}</p>`
+    html += `<h2 style="color:#444;font-size:14pt">Key Points</h2><ul>${keyPoints.map(p => `<li style="margin:4px 0">${p}</li>`).join('')}</ul>`
+    html += `<h2 style="color:#444;font-size:14pt">Full Transcript</h2>`
+    lines.forEach(line => {
+      if (!line.trim()) return
+      const speakerMatch = line.match(/^(Speaker \d+|Agent|Customer|[^:]+)\s*(\[\d+:\d+\])?\s*:\s*(.*)/)
+      if (speakerMatch) {
+        html += `<p style="margin:8px 0"><strong style="color:#6c63ff">${speakerMatch[1]}${speakerMatch[2] ? ' ' + speakerMatch[2] : ''}:</strong> ${speakerMatch[3]}</p>`
+      } else {
+        html += `<p style="margin:8px 0">${line}</p>`
+      }
+    })
+    html += '</body></html>'
+    const blob = new Blob([html], { type: 'application/msword' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = fileName
+    a.click()
+  }
+
+  const downloadXlsx = (segments: Segment[], labeledTranscript: string, fileName: string) => {
+    // Build CSV that Excel opens natively
+    const rows = [['Timestamp', 'Speaker', 'Text']]
+    const lines = labeledTranscript.split('\n')
+    let segIndex = 0
+    lines.forEach(line => {
+      if (!line.trim()) return
+      const m = line.match(/^(.+?)\s*(\[(\d+:\d+)\])?\s*:\s*(.*)/)
+      if (m) {
+        const speaker = m[1].trim()
+        const time = m[3] || (segments[segIndex] ? formatTimestamp(segments[segIndex].start) : '')
+        const text = m[4].trim()
+        rows.push([time, speaker, text])
+        segIndex++
+      }
+    })
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = fileName
+    a.click()
+  }
+
+  const formatTimestamp = (s: number) => `${Math.floor(s/60)}:${Math.floor(s%60).toString().padStart(2,'0')}`
   const downloadTxt = (text: string, name: string) => {
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }))
@@ -465,9 +515,9 @@ export default function Home() {
           </div>
 
           <div className={styles.tabs}>
-            {(['summary', 'labeled', 'transcript'] as const).map(tab => (
-              <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
-                {tab === 'summary' ? '📋 Summary' : tab === 'labeled' ? '👥 Speaker View' : '📝 Raw Transcript'}
+            {(['summary', 'labeled', 'transcript', 'export'] as const).map(tab => (
+              <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab as 'transcript' | 'labeled' | 'summary' | 'export')}>
+                {tab === 'summary' ? '📋 Summary' : tab === 'labeled' ? '👥 Speaker View' : tab === 'transcript' ? '📝 Transcript' : '⬇ Export'}
               </button>
             ))}
           </div>
@@ -490,18 +540,33 @@ export default function Home() {
               <div className={styles.transcriptView}>
                 <div className={styles.transcriptActions}>
                   <button className={styles.actionBtn} onClick={() => copyText(analysis.labeled_transcript)}>📋 Copy</button>
-                  <button className={styles.actionBtn} onClick={() => downloadTxt(analysis.labeled_transcript, 'transcript-labeled.txt')}>💾 Download</button>
+                  <button className={styles.actionBtn} onClick={() => downloadTxt(analysis.labeled_transcript, 'transcript-labeled.txt')}>💾 Download .txt</button>
                 </div>
-                <pre className={styles.transcriptText}>{analysis.labeled_transcript}</pre>
+                <div className={styles.segmentList}>
+                  {analysis.labeled_transcript.split('\n').filter((l: string) => l.trim()).map((line: string, i: number) => {
+                    const m = line.match(/^(.+?)\s*(\[\d+:\d+\])?\s*:\s*(.*)/)
+                    if (m) {
+                      const timeMatch = m[2]
+                      const timeSecs = timeMatch ? (() => { const [mm, ss] = timeMatch.replace(/[\[\]]/g,'').split(':').map(Number); return mm*60+ss })() : null
+                      return (
+                        <div key={i} className={`${styles.segment} ${timeSecs !== null && currentTime >= timeSecs && currentTime < timeSecs + 10 ? styles.segmentActive : ''}`}
+                          onClick={() => timeSecs !== null && seekTo(timeSecs)} style={{ cursor: timeSecs !== null ? 'pointer' : 'default' }}>
+                          <span className={styles.segTime} style={{ color: '#a78bfa' }}>{m[1].trim()}{m[2] ? ' ' + m[2] : ''}</span>
+                          <span className={styles.segText}>{m[3]}</span>
+                        </div>
+                      )
+                    }
+                    return <div key={i} className={styles.segment}><span className={styles.segText}>{line}</span></div>
+                  })}
+                </div>
               </div>
             )}
             {activeTab === 'transcript' && (
               <div className={styles.transcriptView}>
                 <div className={styles.transcriptActions}>
                   <button className={styles.actionBtn} onClick={() => copyText(transcript.text)}>📋 Copy</button>
-                  <button className={styles.actionBtn} onClick={() => downloadTxt(transcript.text, 'transcript-raw.txt')}>💾 Download</button>
+                  <button className={styles.actionBtn} onClick={() => downloadTxt(transcript.text, 'transcript-raw.txt')}>💾 Download .txt</button>
                 </div>
-                {/* Clickable segments with timestamps */}
                 <div className={styles.segmentList}>
                   {transcript.segments.length > 0 ? transcript.segments.map((seg, i) => (
                     <div
@@ -515,6 +580,45 @@ export default function Home() {
                   )) : (
                     <pre className={styles.transcriptText}>{transcript.text}</pre>
                   )}
+                </div>
+              </div>
+            )}
+            {activeTab === 'export' && (
+              <div className={styles.exportView}>
+                <p className={styles.exportDesc}>Download the transcript in your preferred format</p>
+                <div className={styles.exportGrid}>
+                  <div className={styles.exportCard}>
+                    <div className={styles.exportIcon}>📄</div>
+                    <div className={styles.exportInfo}>
+                      <strong>Word Document (.doc)</strong>
+                      <span>Formatted transcript with summary, key points, and speaker-labeled dialogue. Opens in Microsoft Word.</span>
+                    </div>
+                    <button className={styles.exportBtn} onClick={() => downloadDocx(analysis.labeled_transcript, analysis.summary, analysis.key_points, 'transcript.doc')}>Download</button>
+                  </div>
+                  <div className={styles.exportCard}>
+                    <div className={styles.exportIcon}>📊</div>
+                    <div className={styles.exportInfo}>
+                      <strong>Excel / CSV (.csv)</strong>
+                      <span>Spreadsheet with columns: Timestamp, Speaker, Text. Opens directly in Excel.</span>
+                    </div>
+                    <button className={styles.exportBtn} onClick={() => downloadXlsx(transcript.segments, analysis.labeled_transcript, 'transcript.csv')}>Download</button>
+                  </div>
+                  <div className={styles.exportCard}>
+                    <div className={styles.exportIcon}>📝</div>
+                    <div className={styles.exportInfo}>
+                      <strong>Plain Text (.txt)</strong>
+                      <span>Simple text file with the full transcript. Works everywhere.</span>
+                    </div>
+                    <button className={styles.exportBtn} onClick={() => downloadTxt(analysis.labeled_transcript, 'transcript.txt')}>Download</button>
+                  </div>
+                  <div className={styles.exportCard}>
+                    <div className={styles.exportIcon}>⏱</div>
+                    <div className={styles.exportInfo}>
+                      <strong>Timestamped (.txt)</strong>
+                      <span>Raw transcript with timestamps for each segment.</span>
+                    </div>
+                    <button className={styles.exportBtn} onClick={() => downloadTxt(transcript.segments.map(s => `[${formatTime(s.start)}] ${s.text}`).join('\n'), 'transcript-timestamped.txt')}>Download</button>
+                  </div>
                 </div>
               </div>
             )}

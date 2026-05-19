@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
 
     const client = new Anthropic({ apiKey: anthropicKey })
 
-    // Truncate transcript if very long to avoid token limits
-    const MAX_CHARS = 12000
+    // Build segment text — pass full transcript, Claude handles long context well
+    const MAX_CHARS = 30000
     const segmentText = segments && segments.length > 0
       ? segments
           .map((s: { start: number; end: number; text: string }) =>
@@ -25,27 +25,24 @@ export async function POST(req: NextRequest) {
           .slice(0, MAX_CHARS)
       : transcript.slice(0, MAX_CHARS)
 
-    const wasTruncated = transcript.length > MAX_CHARS
-
     const message = await client.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 4096,
+      max_tokens: 8000,
       messages: [{
         role: 'user',
-        content: `Analyze this call recording transcript and respond ONLY with a valid JSON object.
+        content: `Analyze this call recording transcript. Identify speakers based on conversational patterns.
 
-Transcript${wasTruncated ? ' (first portion)' : ''}:
+Transcript:
 ${segmentText}
 
-Return ONLY this JSON structure, no other text, no markdown, no code fences:
-{"speakers":["Speaker 1","Speaker 2"],"labeled_transcript":"Speaker 1: Hello...\\nSpeaker 2: Hi...","summary":"Brief summary here","key_points":["Point 1","Point 2","Point 3"],"sentiment":"positive"}`
+Respond ONLY with a JSON object in this exact format, no markdown, no code fences, no extra text:
+{"speakers":["Speaker 1","Speaker 2"],"labeled_transcript":"Speaker 1 [0:00]: Hello how are you?\\nSpeaker 2 [0:05]: I am fine thanks.","summary":"2-3 sentence summary of the call","key_points":["Key point 1","Key point 2","Key point 3","Key point 4","Key point 5"],"sentiment":"positive"}`
       }]
     })
 
     const content = message.content[0]
     if (content.type !== 'text') throw new Error('Unexpected response type')
 
-    // Robustly extract JSON even if Claude adds extra text
     const raw = content.text.trim()
     const jsonMatch = raw.match(/\{[\s\S]*\}/)
     if (!jsonMatch) throw new Error('No JSON found in response')
