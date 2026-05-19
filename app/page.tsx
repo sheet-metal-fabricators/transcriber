@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import styles from './page.module.css'
 
 type Stage = 'idle' | 'uploading' | 'transcribing' | 'analyzing' | 'done' | 'error'
@@ -59,6 +59,8 @@ export default function Home() {
   const [groqKey, setGroqKey] = useState('')
   const [anthropicKey, setAnthropicKey] = useState('')
   const [showKeys, setShowKeys] = useState(false)
+  const [rememberKeys, setRememberKeys] = useState(false)
+  const [savedBadge, setSavedBadge] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [language, setLanguage] = useState('auto')
   const [stage, setStage] = useState<Stage>('idle')
@@ -70,6 +72,39 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'transcript' | 'labeled' | 'summary'>('summary')
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Load saved keys on mount
+  useEffect(() => {
+    const savedGroq = localStorage.getItem('groq_key')
+    const savedAnthropic = localStorage.getItem('anthropic_key')
+    if (savedGroq) { setGroqKey(savedGroq); setRememberKeys(true) }
+    if (savedAnthropic) { setAnthropicKey(savedAnthropic); setRememberKeys(true) }
+  }, [])
+
+  // Save/clear keys when rememberKeys or keys change
+  const handleSaveKeys = () => {
+    if (rememberKeys) {
+      // Currently ON — turn off and clear
+      localStorage.removeItem('groq_key')
+      localStorage.removeItem('anthropic_key')
+      setRememberKeys(false)
+    } else {
+      // Currently OFF — save and turn on
+      if (groqKey) localStorage.setItem('groq_key', groqKey)
+      if (anthropicKey) localStorage.setItem('anthropic_key', anthropicKey)
+      setRememberKeys(true)
+      setSavedBadge(true)
+      setTimeout(() => setSavedBadge(false), 2000)
+    }
+  }
+
+  // Update localStorage live when keys change and rememberKeys is on
+  useEffect(() => {
+    if (rememberKeys) {
+      if (groqKey) localStorage.setItem('groq_key', groqKey)
+      if (anthropicKey) localStorage.setItem('anthropic_key', anthropicKey)
+    }
+  }, [groqKey, anthropicKey, rememberKeys])
 
   const handleFile = (f: File) => {
     setFile(f)
@@ -172,9 +207,20 @@ export default function Home() {
       <div className={styles.card}>
         <div className={styles.cardHeader}>
           <span className={styles.cardLabel}>API Keys</span>
-          <button className={styles.toggleBtn} onClick={() => setShowKeys(!showKeys)}>
-            {showKeys ? 'Hide' : 'Show'}
-          </button>
+          <div className={styles.cardHeaderRight}>
+            {groqKey && anthropicKey && (
+              <button
+                className={`${styles.rememberBtn} ${rememberKeys ? styles.rememberOn : ''}`}
+                onClick={handleSaveKeys}
+                title={rememberKeys ? 'Keys saved in browser — click to forget' : 'Save keys in browser'}
+              >
+                {savedBadge ? '✓ Saved!' : rememberKeys ? '🔒 Saved' : '💾 Remember keys'}
+              </button>
+            )}
+            <button className={styles.toggleBtn} onClick={() => setShowKeys(!showKeys)}>
+              {showKeys ? 'Hide' : 'Show'}
+            </button>
+          </div>
         </div>
         {showKeys && (
           <div className={styles.keyGrid}>
@@ -190,8 +236,13 @@ export default function Home() {
             </div>
           </div>
         )}
-        {(!groqKey || !anthropicKey) && <p className={styles.keyHint}>Enter both API keys above to enable transcription</p>}
-        {groqKey && anthropicKey && <p className={styles.keyReady}>✓ API keys configured</p>}
+        {(!groqKey || !anthropicKey) && <p className={styles.keyHint}>⚠ Enter both API keys above to enable transcription</p>}
+        {groqKey && anthropicKey && (
+          <p className={styles.keyReady}>
+            ✓ API keys configured
+            {rememberKeys && <span className={styles.savedNote}> · saved in this browser</span>}
+          </p>
+        )}
       </div>
 
       <div className={styles.card}>

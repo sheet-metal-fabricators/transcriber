@@ -448,3 +448,35 @@
   color: var(--muted);
   font-style: italic;
 }
+
+/* Remember keys */
+.cardHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rememberBtn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--muted2);
+  font-family: 'Outfit', sans-serif;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.rememberBtn:hover { border-color: var(--accent); color: var(--accent); }
+.rememberOn {
+  background: rgba(62,207,142,0.1);
+  border-color: rgba(62,207,142,0.4);
+  color: var(--success);
+}
+.rememberOn:hover { border-color: rgba(239,68,68,0.4); color: #f87171; }
+
+.savedNote {
+  color: var(--success);
+  font-size: 0.75rem;
+}
