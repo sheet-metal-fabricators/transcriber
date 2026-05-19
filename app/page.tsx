@@ -656,9 +656,14 @@ export default function Home() {
                   <span className={styles.ffmpegNum}>3</span>
                   <div>
                     <strong>Go to the folder where your file is saved</strong>
-                    <p>In Command Prompt type cd followed by your folder path. Example for Downloads:</p>
-                    <div className={styles.miniCmd}><code>cd %USERPROFILE%\Downloads</code></div>
-                    <p>Tip: Open File Explorer, hold Shift and right-click the folder, then click "Open in Terminal".</p>
+                    <p>In Command Prompt, type <b>cd</b> followed by the full path to your file's folder.</p>
+                    <p>Examples:</p>
+                    <div className={styles.miniCmd}><code>cd C:\Users\YourName\Downloads</code></div>
+                    <p>If your file is on an external drive (e.g. D: or E:):</p>
+                    <div className={styles.miniCmd}><code>D:</code></div>
+                    <p>Then navigate to the folder:</p>
+                    <div className={styles.miniCmd}><code>cd D:\MyVideos\Recordings</code></div>
+                    <p>💡 <b>Easiest way:</b> Open File Explorer, open the folder where your file is, hold <b>Shift</b> and right-click an empty area in the folder, then click <b>"Open in Terminal"</b> or <b>"Open command window here"</b> — it opens directly in the right folder.</p>
                   </div>
                 </div>
 
@@ -668,7 +673,7 @@ export default function Home() {
                     <strong>Run the conversion command</strong>
                     <p>Click Copy above and paste the command into Command Prompt, then press Enter:</p>
                     <div className={styles.miniCmd}><code style={{color:'#30d158'}}>{ffmpegCmd}</code></div>
-                    <p>You will see progress lines. Wait until it returns to the prompt (shows your folder path again).</p>
+                    <p>You will see progress lines. Wait until it returns to the prompt (shows your folder path again). This may take 1-2 minutes for large files.</p>
                   </div>
                 </div>
 
@@ -676,7 +681,7 @@ export default function Home() {
                   <span className={styles.ffmpegNum}>5</span>
                   <div>
                     <strong>Upload the converted file here</strong>
-                    <p>A file called <code>converted.mp3</code> will appear in the same folder. Upload it to this tool — it will be under 50MB and transcribe perfectly.</p>
+                    <p>A file called <code>converted.mp3</code> will appear in the <b>same folder as your original file</b> — including on the external drive if that's where you ran the command from. Upload it to this tool — it will be under 50MB and transcribe perfectly.</p>
                   </div>
                 </div>
               </div>
